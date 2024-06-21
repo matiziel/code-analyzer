@@ -1,36 +1,21 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using System.Collections.Immutable;
 using Analyzer;
-using Microsoft.CodeAnalysis;
+using Common;
 using Microsoft.CodeAnalysis.Diagnostics;
-using Microsoft.CodeAnalysis.MSBuild;
+
 
 var projectPath = "/home/mateusz/Documents/Projects/C#/my-interpreter/MyInterpreter/MyInterpreter/MyInterpreter.csproj";
-        
-if (!File.Exists(projectPath) && !Directory.Exists(projectPath))
-{
-    Console.WriteLine("Invalid path.");
-    return;
-}
 
-using var workspace = MSBuildWorkspace.Create();
-Project? project;
+var projects = await ProjectProvider.GetFromPath(projectPath);
 
-if (Directory.Exists(projectPath))
-{
-    var solution = await workspace.OpenSolutionAsync(projectPath);
-    project = solution.Projects.FirstOrDefault();
-}
-else
-{
-    project = await workspace.OpenProjectAsync(projectPath);
-}
-
-if (project == null)
+if (!projects.Any())
 {
     Console.WriteLine("Project not found.");
     return;
 }
+
+var project = projects.FirstOrDefault();
 
 var compilation = await project.GetCompilationAsync();
 
