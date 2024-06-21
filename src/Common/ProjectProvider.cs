@@ -18,10 +18,9 @@ public class ProjectProvider {
                 var solution = await workspace.OpenSolutionAsync(path);
                 return solution.Projects;
             }
-            else {
-                var project = await workspace.OpenProjectAsync(path);
-                return new List<Project>() { project };
-            }
+
+            var project = await workspace.OpenProjectAsync(path);
+            return new List<Project>() { project };
         }
         catch (Exception ex) {
             Console.WriteLine(ex.Message);
