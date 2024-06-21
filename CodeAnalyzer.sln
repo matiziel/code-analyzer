@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MetricCalculator", "src\Met
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Common", "src\Common\Common.csproj", "{6AEF4A3A-783A-425F-9AF0-B6BD91B6B99B}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{0D9CA51E-5C4A-4869-9918-2B9ACA233250}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,5 +32,8 @@ Global
 		{6AEF4A3A-783A-425F-9AF0-B6BD91B6B99B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6AEF4A3A-783A-425F-9AF0-B6BD91B6B99B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6AEF4A3A-783A-425F-9AF0-B6BD91B6B99B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{8A9AB5FD-FDA4-47F4-9A7A-2544DEF854D3} = {0D9CA51E-5C4A-4869-9918-2B9ACA233250}
 	EndGlobalSection
 EndGlobal
