@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using Common;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -118,6 +117,6 @@ public class RefusedBequestAnalyzer : DiagnosticAnalyzer {
             return false;
         }
         var symbolInfo = semanticModel.GetSymbolInfo(descendant);
-        return symbolInfo.Symbol?.ContainingType is not null && symbolInfo.Symbol.ContainingType.Equals(baseType);
+        return symbolInfo.Symbol?.ContainingType is not null && SymbolEqualityComparer.Default.Equals(symbolInfo.Symbol.ContainingType, baseType);
     }
 }

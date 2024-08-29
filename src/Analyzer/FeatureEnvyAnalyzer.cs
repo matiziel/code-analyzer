@@ -37,16 +37,16 @@ public class FeatureEnvyAnalyzer : DiagnosticAnalyzer {
         var methodDeclaration = (MethodDeclarationSyntax)context.Node;
         var semanticModel = context.SemanticModel;
 
-        var invocationCount = new Dictionary<INamedTypeSymbol, int>();
+        var invocationCount = new Dictionary<INamedTypeSymbol, int>(SymbolEqualityComparer.Default);
         var containingType = context.ContainingSymbol.ContainingType;
 
         var systemAssemblies = context.GetSystemAssemblies();
 
         foreach (var invocation in methodDeclaration.DescendantNodes().OfType<InvocationExpressionSyntax>()) {
-
             var methodContainingType = GetMethodContainingType(semanticModel, invocation);
 
-            if (methodContainingType == null || methodContainingType.Equals(containingType)) {
+            if (methodContainingType == null ||
+                SymbolEqualityComparer.Default.Equals(methodContainingType, containingType)) {
                 continue;
             }
 
@@ -54,9 +54,7 @@ public class FeatureEnvyAnalyzer : DiagnosticAnalyzer {
                 continue;
             }
 
-            if (!invocationCount.ContainsKey(methodContainingType)) {
-                invocationCount[methodContainingType] = 0;
-            }
+            invocationCount.TryAdd(methodContainingType, 0);
 
             invocationCount[methodContainingType]++;
         }
@@ -75,11 +73,10 @@ public class FeatureEnvyAnalyzer : DiagnosticAnalyzer {
 
     private static INamedTypeSymbol GetMethodContainingType(
         SemanticModel semanticModel, InvocationExpressionSyntax invocation) {
-        
         var symbolInfo = semanticModel.GetSymbolInfo(invocation.Expression);
         var methodSymbol = symbolInfo.Symbol as IMethodSymbol;
-        
-        return  methodSymbol?.ContainingType;
+
+        return methodSymbol?.ContainingType;
     }
 
     private static bool IsSystemMethod(INamedTypeSymbol methodContainingType, HashSet<string> systemAssemblies) {
@@ -87,6 +84,4 @@ public class FeatureEnvyAnalyzer : DiagnosticAnalyzer {
 
         return assemblyName == null || systemAssemblies.Contains(assemblyName);
     }
-    
-    
 }
