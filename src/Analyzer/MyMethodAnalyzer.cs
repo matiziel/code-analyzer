@@ -35,8 +35,7 @@ public class MyMethodCallAnalyzer : DiagnosticAnalyzer {
 
         var symbolInfo = context.SemanticModel.GetSymbolInfo(memberAccessExpr);
         var methodSymbol = symbolInfo.Symbol as IMethodSymbol;
-
-        // Dodatkowe sprawdzenie, jeśli symbolInfo.Symbol jest null, sprawdź kandydatów
+        
         if (methodSymbol == null && symbolInfo.CandidateSymbols.Length > 0) {
             methodSymbol = symbolInfo.CandidateSymbols[0] as IMethodSymbol;
         }

@@ -5,7 +5,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace MetricCalculator;
 
-public class MethodMetricCalculator {
+public class MethodMetricCalculator : IMetricCalculator<MethodMetrics> {
     public async Task<IEnumerable<MethodMetrics>> Calculate(string solutionPath) {
         var projects = await ProjectProvider.GetFromPath(solutionPath);
 
@@ -21,7 +21,8 @@ public class MethodMetricCalculator {
 
                 var model = await document.GetSemanticModelAsync();
 
-                var methodMetrics = root.DescendantNodes().OfType<MethodDeclarationSyntax>()
+                var methodMetrics = root.DescendantNodes()
+                    .OfType<MethodDeclarationSyntax>()
                     .Where(method => method.Parent is not InterfaceDeclarationSyntax)
                     .Select(method => new MethodMetrics {
                         MethodName = method.Identifier.Text,
@@ -170,14 +171,14 @@ public class MethodMetricCalculator {
         CalculateNumberOfParametersInExternalMethods(MethodDeclarationSyntax method, SemanticModel model) {
         return method.DescendantNodes().OfType<InvocationExpressionSyntax>()
             .Select(inv => model.GetSymbolInfo(inv).Symbol as IMethodSymbol)
-            .Where(symbol => symbol != null && !symbol.ContainingType.Equals(model.GetDeclaredSymbol(method.Parent)))
+            .Where(symbol => symbol != null && !SymbolEqualityComparer.Default.Equals(symbol.ContainingType, model.GetDeclaredSymbol(method.Parent)))
             .Sum(symbol => symbol.Parameters.Length);
     }
 
     private static int CalculateNumberOfExternalMethodsCalled(MethodDeclarationSyntax method, SemanticModel model) {
         return method.DescendantNodes().OfType<InvocationExpressionSyntax>()
             .Select(inv => model.GetSymbolInfo(inv).Symbol as IMethodSymbol)
-            .Count(symbol => symbol != null && !symbol.ContainingType.Equals(model.GetDeclaredSymbol(method.Parent)));
+            .Count(symbol => symbol != null && !SymbolEqualityComparer.Default.Equals(symbol.ContainingType, model.GetDeclaredSymbol(method.Parent)));
     }
 
     private static int CalculateMaximumMethodsNestingBlocks(MethodDeclarationSyntax method) {
@@ -203,7 +204,7 @@ public class MethodMetricCalculator {
     }
 
     private static int GetInvocationDepth(InvocationExpressionSyntax invocation) {
-        int depth = 0;
+        var depth = 0;
         var parent = invocation.Parent;
 
         while (parent != null) {
