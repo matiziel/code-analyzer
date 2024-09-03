@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Common;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -26,25 +27,25 @@ public class MethodMetricCalculator : IMetricCalculator<MethodMetrics> {
                     .Where(method => method.Parent is not InterfaceDeclarationSyntax)
                     .Select(method => new MethodMetrics {
                         MethodName = method.Identifier.Text,
-                        Cyclo = CalculateCyclomaticComplexity(method),
-                        CycloSwitch = CalculateSwitchComplexity(method),
+                        Cyclo = method.CalculateCyclomaticComplexity(),
+                        CycloSwitch = method.CalculateCyclomaticComplexityWithoutCases(),
                         Mloc = CalculateMethodLinesOfCode(method),
-                        Meloc = CalculateMethodEffectiveLinesOfCode(method),
+                        Meloc = method.CalculateMethodEffectiveLinesOfCode(),
                         Nop = CalculateNumberOfParameters(method),
                         Nolv = CalculateNumberOfLocalVariables(method),
-                        Notc = CalculateNumberOfTypeCasts(method),
-                        Mnol = CalculateMaximumNestingOfLoops(method),
-                        Mnor = CalculateMaximumNestingOfRecursions(method),
-                        Mnoc = CalculateMaximumNestingOfConditionals(method),
-                        Mnoa = CalculateMaximumNestingOfArrays(method),
-                        Nonl = CalculateNumberOfNestedLoops(method),
-                        Nosl = CalculateNumberOfStatementsInLoops(method),
-                        Nomo = CalculateNumberOfMethodsOverloaded(root, method),
-                        Nope = CalculateNumberOfParametersInExternalMethods(method, model),
-                        Nole = CalculateNumberOfExternalMethodsCalled(method, model),
-                        Mmnb = CalculateMaximumMethodsNestingBlocks(method),
-                        Nouw = CalculateNumberOfUnusedVariables(method, model),
-                        Aid = CalculateAverageInvocationDepth(method),
+                        Notc = CalculateNumberOfTryCatchBlocks(method),
+                        Mnol = method.CalculateNumberOfLoops(),
+                        Mnor = method.CalculateNumberOfReturnStatements(),
+                        Mnoc = method.CalculateNumberOfComparisonOperators(),
+                        Mnoa = method.CalculateNumberOfAssignments(),
+                        Nonl = CalculateNumberOfNumericLiterals(method),
+                        Nosl = CalculateNumberOfStringLiterals(method),
+                        Nomo = CalculateNumberOfMathOperations(root, method),
+                        Nope = CalculateNumberOfParenthesizedExpressions(method),
+                        Nole = CalculateNumberOfLambdaExpressions(method),
+                        Mmnb = method.CalculateMaximumMethodsNestingBlocks(),
+                        Nouw = CalculateNumberOfUniqueWords(method),
+                        Aid = CalculateAccessToForeignData(method, model),
                     }).ToList();
 
                 calculatedMetrics.AddRange(methodMetrics);
@@ -54,34 +55,10 @@ public class MethodMetricCalculator : IMetricCalculator<MethodMetrics> {
         return calculatedMetrics;
     }
 
-    private static int CalculateCyclomaticComplexity(MethodDeclarationSyntax method) {
-        var complexity = 1;
-        complexity += method.DescendantNodes().OfType<IfStatementSyntax>().Count();
-        complexity += method.DescendantNodes().OfType<ForStatementSyntax>().Count();
-        complexity += method.DescendantNodes().OfType<WhileStatementSyntax>().Count();
-        complexity += method.DescendantNodes().OfType<DoStatementSyntax>().Count();
-        complexity += method.DescendantNodes().OfType<CaseSwitchLabelSyntax>().Count();
-        complexity += method.DescendantNodes().OfType<ConditionalExpressionSyntax>().Count();
-        complexity += method.DescendantNodes().OfType<CatchClauseSyntax>().Count();
-        return complexity;
-    }
-
-    private static int CalculateSwitchComplexity(MethodDeclarationSyntax method) {
-        return method.DescendantNodes().OfType<SwitchStatementSyntax>().Sum(s => s.Sections.Count);
-    }
-
     private static int CalculateMethodLinesOfCode(MethodDeclarationSyntax method) {
         var lines = method.GetLocation().GetLineSpan().EndLinePosition.Line -
             method.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
         return lines;
-    }
-
-    private static int CalculateMethodEffectiveLinesOfCode(MethodDeclarationSyntax method) {
-        if (method.ExpressionBody is not null) {
-            return 1;
-        }
-
-        return method.Body?.Statements.Count ?? 0;
     }
 
     private static int CalculateNumberOfParameters(MethodDeclarationSyntax method) {
@@ -92,129 +69,271 @@ public class MethodMetricCalculator : IMetricCalculator<MethodMetrics> {
         return method.DescendantNodes().OfType<VariableDeclaratorSyntax>().Count();
     }
 
-    private static int CalculateNumberOfTypeCasts(MethodDeclarationSyntax method) {
-        return method.DescendantNodes().OfType<CastExpressionSyntax>().Count();
+    private static int CalculateNumberOfTryCatchBlocks(MethodDeclarationSyntax method) {
+        return method.DescendantNodes().OfType<TryStatementSyntax>().Count();
     }
 
-    private static int CalculateMaximumNestingOfLoops(MethodDeclarationSyntax method) {
-        return GetMaximumNesting(method,
-            n => n is ForStatementSyntax or WhileStatementSyntax or DoStatementSyntax or ForEachStatementSyntax);
+
+
+    private static int CalculateNumberOfNumericLiterals(MethodDeclarationSyntax method) {
+        return method.DescendantNodes().OfType<LiteralExpressionSyntax>()
+            .Count(n => n.IsKind(SyntaxKind.NumericLiteralExpression));
     }
 
-    private static int GetMaximumNesting(MethodDeclarationSyntax method, Func<SyntaxNode, bool> condition) {
-        var maxNesting = 0;
-        var currentNesting = 0;
+    private static int CalculateNumberOfStringLiterals(MethodDeclarationSyntax method) {
+        return method.DescendantNodes().OfType<LiteralExpressionSyntax>()
+            .Count(n => n.IsKind(SyntaxKind.StringLiteralExpression));
+    }
 
-        void Visit(SyntaxNode node) {
-            if (condition.Invoke(node)) {
-                currentNesting++;
-                if (currentNesting > maxNesting) {
-                    maxNesting = currentNesting;
-                }
+    private static int CalculateNumberOfMathOperations(SyntaxNode root, MethodDeclarationSyntax method) {
+        int count = CountBinaryExpressions(method);
+        count += CountUnaryExpressions(method);
+        return count;
+    }
 
-                foreach (var child in node.ChildNodes()) {
-                    Visit(child);
-                }
+    private static int CountBinaryExpressions(MemberDeclarationSyntax method) {
+        return method.DescendantNodes().OfType<BinaryExpressionSyntax>()
+            .Count(n => n.IsKind(SyntaxKind.AddExpression) ||
+                        n.IsKind(SyntaxKind.SubtractExpression) ||
+                        n.IsKind(SyntaxKind.MultiplyExpression) ||
+                        n.IsKind(SyntaxKind.DivideExpression) ||
+                        n.IsKind(SyntaxKind.ModuloExpression) ||
+                        n.IsKind(SyntaxKind.LeftShiftExpression) ||
+                        n.IsKind(SyntaxKind.RightShiftExpression));
+    }
 
-                currentNesting--;
+    private static int CountUnaryExpressions(MemberDeclarationSyntax method) {
+        int count = method.DescendantNodes().OfType<PrefixUnaryExpressionSyntax>()
+            .Count(n => n.IsKind(SyntaxKind.PreIncrementExpression) ||
+                        n.IsKind(SyntaxKind.PreDecrementExpression) ||
+                        n.IsKind(SyntaxKind.UnaryPlusExpression) ||
+                        n.IsKind(SyntaxKind.UnaryMinusExpression));
+        count += method.DescendantNodes().OfType<PostfixUnaryExpressionSyntax>()
+            .Count(n => n.IsKind(SyntaxKind.PostIncrementExpression) ||
+                        n.IsKind(SyntaxKind.PostDecrementExpression));
+        return count;
+    }
+
+    private static int CalculateNumberOfParenthesizedExpressions(MethodDeclarationSyntax method) {
+        return method.DescendantNodes().OfType<ExpressionSyntax>()
+            .Count(n => n.IsKind(SyntaxKind.ParenthesizedExpression));
+    }
+
+    private static int CalculateNumberOfLambdaExpressions(MethodDeclarationSyntax method) {
+        return method.DescendantNodes().OfType<LambdaExpressionSyntax>().Count();
+    }
+
+    private static int CalculateNumberOfUniqueWords(MemberDeclarationSyntax method) {
+        if (!(method.Kind().Equals(SyntaxKind.MethodDeclaration) ||
+              method.Kind().Equals(SyntaxKind.ConstructorDeclaration))) return 0;
+
+        var baseMethod = (BaseMethodDeclarationSyntax)method;
+        var methodBody = baseMethod.Body.RemoveCommentsFromCode();
+        methodBody = RemoveSymbols(methodBody);
+        var words = GetWords(methodBody);
+        words = BreakWords(words);
+        words = FilterWords(words);
+        return words.Distinct(StringComparer.CurrentCultureIgnoreCase).Count();
+    }
+
+
+
+    private static List<string> GetWords(string methodBody) {
+        return Regex.Split(methodBody, "[\\s+]").Select(word => word.Trim()).ToList();
+    }
+
+    private static string RemoveSymbols(string words) {
+        return words
+            .Replace("(", " ")
+            .Replace(")", " ")
+            .Replace("{", " ")
+            .Replace("}", " ")
+            .Replace("=", " ")
+            .Replace(">", " ")
+            .Replace("<", " ")
+            .Replace("&", " ")
+            .Replace("|", " ")
+            .Replace("!", " ")
+            .Replace("+", " ")
+            .Replace("*", " ")
+            .Replace("/", " ")
+            .Replace("-", " ")
+            .Replace(";", " ")
+            .Replace(":", " ")
+            .Replace(",", " ")
+            .Replace("[", " ")
+            .Replace("]", " ")
+            .Replace("\"", " ")
+            .Replace(".", " ")
+            .Replace("?", " ");
+    }
+
+    private static List<string> FilterWords(List<string> words) {
+        return words.Where(word => !string.IsNullOrEmpty(word))
+            .Where(word => !Regex.IsMatch(word, "[0-9]+"))
+            .Where(word => !GetKeywords().Contains(word))
+            .ToList();
+    }
+
+    private static List<string> BreakWords(List<string> words) {
+        var individualWords = new List<string>();
+        foreach (var word in words) {
+            var wordParts = Regex.Split(word, "[_ ]").ToList();
+            var camelCaseWords = GetCamelCaseWords(wordParts);
+            individualWords.AddRange(camelCaseWords);
+        }
+
+        return individualWords;
+    }
+
+    private static List<string> GetCamelCaseWords(List<string> words) {
+        var camelCaseWords = new List<string>();
+        foreach (var word in words) {
+            var wordParts = Regex.Split(word, "[A-Z]");
+            var matches = Regex.Matches(word, "[A-Z]");
+            for (int i = 0; i < wordParts.Length - 1; i++) {
+                wordParts[i + 1] = matches[i] + wordParts[i + 1];
             }
-            else {
-                foreach (var child in node.ChildNodes()) {
-                    Visit(child);
+
+            camelCaseWords.AddRange(wordParts);
+        }
+
+        return camelCaseWords;
+    }
+
+    private static List<string> GetKeywords() {
+        List<string> keywords = new List<string>();
+        keywords.Add("abstract");
+        keywords.Add("as");
+        keywords.Add("base");
+        keywords.Add("bool");
+        keywords.Add("break");
+        keywords.Add("byte");
+        keywords.Add("case");
+        keywords.Add("catch");
+        keywords.Add("char");
+        keywords.Add("checked");
+        keywords.Add("class");
+        keywords.Add("const");
+        keywords.Add("continue");
+        keywords.Add("decimal");
+        keywords.Add("default");
+        keywords.Add("delegate");
+        keywords.Add("do");
+        keywords.Add("double");
+        keywords.Add("else");
+        keywords.Add("enum");
+        keywords.Add("event");
+        keywords.Add("explicit");
+        keywords.Add("extern");
+        keywords.Add("false");
+        keywords.Add("finally");
+        keywords.Add("fixed");
+        keywords.Add("float");
+        keywords.Add("for");
+        keywords.Add("foreach");
+        keywords.Add("goto");
+        keywords.Add("if");
+        keywords.Add("implicit");
+        keywords.Add("in");
+        keywords.Add("int");
+        keywords.Add("interface");
+        keywords.Add("internal");
+        keywords.Add("is");
+        keywords.Add("lock");
+        keywords.Add("long");
+        keywords.Add("namespace");
+        keywords.Add("new");
+        keywords.Add("null");
+        keywords.Add("object");
+        keywords.Add("operator");
+        keywords.Add("out");
+        keywords.Add("override");
+        keywords.Add("params");
+        keywords.Add("private");
+        keywords.Add("protected");
+        keywords.Add("public");
+        keywords.Add("readonly");
+        keywords.Add("record");
+        keywords.Add("ref");
+        keywords.Add("return");
+        keywords.Add("sbyte");
+        keywords.Add("sealed");
+        keywords.Add("short");
+        keywords.Add("sizeof");
+        keywords.Add("stackalloc");
+        keywords.Add("static");
+        keywords.Add("string");
+        keywords.Add("struct");
+        keywords.Add("switch");
+        keywords.Add("this");
+        keywords.Add("throw");
+        keywords.Add("true");
+        keywords.Add("try");
+        keywords.Add("typeof");
+        keywords.Add("uint");
+        keywords.Add("ulong");
+        keywords.Add("unchecked");
+        keywords.Add("unsafe");
+        keywords.Add("ushort");
+        keywords.Add("using");
+        keywords.Add("virtual");
+        keywords.Add("void");
+        keywords.Add("volatile");
+        keywords.Add("while");
+        return keywords;
+    }
+
+    private int CalculateAccessToForeignData(MethodDeclarationSyntax method, SemanticModel semanticModel)
+    {
+        var foreignDataClasses = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+
+        var variables = method.Body?.DescendantNodes()
+            .OfType<VariableDeclaratorSyntax>()
+            .Select(variable => semanticModel.GetDeclaredSymbol(variable))
+            .OfType<IFieldSymbol>()
+            .Select(field => field.Type as INamedTypeSymbol)
+            .Where(type => type != null);
+
+        if (variables != null)
+        {
+            foreach (var type in variables)
+            {
+                if (!SymbolEqualityComparer.Default.Equals(type, semanticModel.GetDeclaredSymbol(method)?.ContainingType))
+                {
+                    foreignDataClasses.Add(type);
                 }
             }
         }
 
-        Visit(method);
-        return maxNesting;
-    }
+        var parameters = method.ParameterList.Parameters
+            .Select(param => semanticModel.GetDeclaredSymbol(param))
+            .Select(param => param?.Type as INamedTypeSymbol)
+            .Where(type => type != null);
 
-    private static int CalculateMaximumNestingOfRecursions(MethodDeclarationSyntax method) {
-        return method.DescendantNodes().OfType<InvocationExpressionSyntax>()
-            .Count(i =>
-                i.Expression is IdentifierNameSyntax identifier &&
-                identifier.Identifier.Text == method.Identifier.Text);
-    }
-
-    private static int CalculateMaximumNestingOfConditionals(MethodDeclarationSyntax method) {
-        return GetMaximumNesting(method, node => node is IfStatementSyntax);
-    }
-
-    private static int CalculateMaximumNestingOfArrays(MethodDeclarationSyntax method) {
-        return method.DescendantNodes().OfType<ArrayCreationExpressionSyntax>().Count();
-    }
-
-    private static int CalculateNumberOfNestedLoops(MethodDeclarationSyntax method) {
-        return method.DescendantNodes().OfType<ForStatementSyntax>().Count() +
-               method.DescendantNodes().OfType<WhileStatementSyntax>().Count() +
-               method.DescendantNodes().OfType<DoStatementSyntax>().Count() +
-               method.DescendantNodes().OfType<ForEachStatementSyntax>().Count();
-    }
-
-    private static int CalculateNumberOfStatementsInLoops(MethodDeclarationSyntax method) {
-        return method.DescendantNodes().OfType<ForStatementSyntax>()
-                   .Sum(forStmt => forStmt.Statement.ChildNodes().Count()) +
-               method.DescendantNodes().OfType<WhileStatementSyntax>()
-                   .Sum(whileStmt => whileStmt.Statement.ChildNodes().Count()) +
-               method.DescendantNodes().OfType<DoStatementSyntax>()
-                   .Sum(doStmt => doStmt.Statement.ChildNodes().Count()) +
-               method.DescendantNodes().OfType<ForEachStatementSyntax>()
-                   .Sum(forEachStmt => forEachStmt.Statement.ChildNodes().Count());
-    }
-
-    private static int CalculateNumberOfMethodsOverloaded(SyntaxNode root, MethodDeclarationSyntax method) {
-        var methodName = method.Identifier.Text;
-        return root.DescendantNodes().OfType<MethodDeclarationSyntax>().Count(m => m.Identifier.Text == methodName);
-    }
-
-    private static int
-        CalculateNumberOfParametersInExternalMethods(MethodDeclarationSyntax method, SemanticModel model) {
-        return method.DescendantNodes().OfType<InvocationExpressionSyntax>()
-            .Select(inv => model.GetSymbolInfo(inv).Symbol as IMethodSymbol)
-            .Where(symbol => symbol != null && !SymbolEqualityComparer.Default.Equals(symbol.ContainingType, model.GetDeclaredSymbol(method.Parent)))
-            .Sum(symbol => symbol.Parameters.Length);
-    }
-
-    private static int CalculateNumberOfExternalMethodsCalled(MethodDeclarationSyntax method, SemanticModel model) {
-        return method.DescendantNodes().OfType<InvocationExpressionSyntax>()
-            .Select(inv => model.GetSymbolInfo(inv).Symbol as IMethodSymbol)
-            .Count(symbol => symbol != null && !SymbolEqualityComparer.Default.Equals(symbol.ContainingType, model.GetDeclaredSymbol(method.Parent)));
-    }
-
-    private static int CalculateMaximumMethodsNestingBlocks(MethodDeclarationSyntax method) {
-        return GetMaximumNesting(method, node => node is BlockSyntax);
-    }
-
-    private static int CalculateNumberOfUnusedVariables(MethodDeclarationSyntax method, SemanticModel model) {
-        var variables = method.DescendantNodes().OfType<VariableDeclaratorSyntax>();
-        var usedVariables = new HashSet<string>(method.DescendantNodes().OfType<IdentifierNameSyntax>()
-            .Select(id => id.Identifier.Text));
-
-        return variables.Count(variable => !usedVariables.Contains(variable.Identifier.Text));
-    }
-
-    private static double CalculateAverageInvocationDepth(MethodDeclarationSyntax method) {
-        var invocations = method.DescendantNodes().OfType<InvocationExpressionSyntax>().ToList();
-        if (invocations.Count == 0) {
-            return 0;
-        }
-
-        double totalDepth = invocations.Sum(GetInvocationDepth);
-        return totalDepth / invocations.Count;
-    }
-
-    private static int GetInvocationDepth(InvocationExpressionSyntax invocation) {
-        var depth = 0;
-        var parent = invocation.Parent;
-
-        while (parent != null) {
-            if (parent is InvocationExpressionSyntax) {
-                depth++;
+        foreach (var type in parameters)
+        {
+            if (!SymbolEqualityComparer.Default.Equals(type, semanticModel.GetDeclaredSymbol(method)?.ContainingType))
+            {
+                foreignDataClasses.Add(type);
             }
-
-            parent = parent.Parent;
         }
 
-        return depth;
+        var memberAccesses = method.Body?.DescendantNodes()
+            .OfType<MemberAccessExpressionSyntax>()
+            .Select(memberAccess => semanticModel.GetSymbolInfo(memberAccess).Symbol)
+            .OfType<IMethodSymbol>()
+            .Select(member => member.ContainingType)
+            .Where(type => type != null && !SymbolEqualityComparer.Default.Equals(type, semanticModel.GetDeclaredSymbol(method)?.ContainingType));
+
+        if (memberAccesses != null)
+        {
+            foreach (var type in memberAccesses)
+            {
+                foreignDataClasses.Add(type);
+            }
+        }
+
+        return foreignDataClasses.Count;
     }
 }
