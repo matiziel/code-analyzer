@@ -33,8 +33,8 @@ public class ClassMetricCalculator : IMetricCalculator<ClassMetrics> {
                         Wmc = CalculateWeightedMethods(classDeclaration),
                         WmcNoCase = CalculateWeightedMethodsWihoutCase(classDeclaration),
                         Lcom = classDeclaration.CalculateLackOfCohesion(model),
-                        Lcom3 = classDeclaration.CalculateLackOfCohesion3(),
-                        Lcom4 = classDeclaration.CalculateLackOfCohesion4(),
+                        Lcom3 = classDeclaration.CalculateLackOfCohesion3(model),
+                        Lcom4 = classDeclaration.CalculateLackOfCohesion4(model),
                         Tcc = classDeclaration.CalculateTightClassCohesion(),
                         Atfd = CalculateAccessToForeignData(classDeclaration, model),
                         Cnor = CalculateNumberReturnStatements(classDeclaration),
@@ -111,14 +111,16 @@ public class ClassMetricCalculator : IMetricCalculator<ClassMetrics> {
             foreach (var memberAccess in memberAccesses) {
                 var symbolInfo = semanticModel.GetSymbolInfo(memberAccess);
 
-                if (symbolInfo.Symbol != null) {
-                    var containingType = symbolInfo.Symbol.ContainingType;
-                    var currentClass = semanticModel.GetDeclaredSymbol(classDeclaration);
+                if (symbolInfo.Symbol == null) {
+                    continue;
+                }
 
-                    if (containingType != null && currentClass != null &&
-                        !SymbolEqualityComparer.Default.Equals(containingType, currentClass)) {
-                        accessToForeignDataCount++;
-                    }
+                var containingType = symbolInfo.Symbol.ContainingType;
+                var currentClass = semanticModel.GetDeclaredSymbol(classDeclaration);
+
+                if (containingType != null && currentClass != null &&
+                    !SymbolEqualityComparer.Default.Equals(containingType, currentClass)) {
+                    accessToForeignDataCount++;
                 }
             }
         }
@@ -381,8 +383,7 @@ public class ClassMetricCalculator : IMetricCalculator<ClassMetrics> {
         }
 
         var baseMembers = baseType.GetMembers()
-            .Where(member => member.DeclaredAccessibility == Accessibility.Public ||
-                             member.DeclaredAccessibility == Accessibility.Protected)
+            .Where(member => member.DeclaredAccessibility is Accessibility.Public or Accessibility.Protected)
             .ToList();
 
         if (!baseMembers.Any()) {
@@ -407,7 +408,6 @@ public class ClassMetricCalculator : IMetricCalculator<ClassMetrics> {
             }
         }
 
-        double bur = (double)usedBaseMembers.Count / baseMembers.Count;
-        return bur;
+        return (double)usedBaseMembers.Count / baseMembers.Count;
     }
 }
