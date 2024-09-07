@@ -14,13 +14,18 @@ public class ProjectProvider {
 
             using var workspace = MSBuildWorkspace.Create();
 
-            if (Directory.Exists(path)) {
+            if (path.EndsWith(".sln")) {
                 var solution = await workspace.OpenSolutionAsync(path);
                 return solution.Projects;
             }
 
-            var project = await workspace.OpenProjectAsync(path);
-            return new List<Project>() { project };
+            if (path.EndsWith(".csproj")) {
+                var project = await workspace.OpenProjectAsync(path);
+                return new List<Project>() { project };
+            }
+            
+            Console.WriteLine("Wrong project or solution path");
+            return Enumerable.Empty<Project>(); 
         }
         catch (Exception ex) {
             Console.WriteLine(ex.Message);

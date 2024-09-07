@@ -6,7 +6,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace MetricCalculator;
 
 public class ClassMetricCalculator : IMetricCalculator<ClassMetrics> {
-    public async Task<IEnumerable<ClassMetrics>> Calculate(string solutionPath) {
+    public async Task<IEnumerable<ClassMetrics>> Calculate(string solutionPath,  Dictionary<string, int> annotations = null) {
         var projects = await ProjectProvider.GetFromPath(solutionPath);
 
         var calculatedMetrics = new List<ClassMetrics>();
@@ -21,10 +21,17 @@ public class ClassMetricCalculator : IMetricCalculator<ClassMetrics> {
 
                 var model = await document.GetSemanticModelAsync();
 
-                var classMetrics = root.DescendantNodes()
-                    .OfType<ClassDeclarationSyntax>()
+                var classes = root.DescendantNodes()
+                    .OfType<ClassDeclarationSyntax>();
+
+                if (annotations != null) {
+                    classes = classes.Where(x =>
+                        annotations.Keys.Contains(model.GetDeclaredSymbol(x)?.ToDisplayString()));
+                }
+
+                var classMetrics = classes
                     .Select(classDeclaration => new ClassMetrics {
-                        ClassName = classDeclaration.Identifier.Text,
+                        ClassName = model.GetDeclaredSymbol(classDeclaration)?.ToDisplayString() ?? classDeclaration.Identifier.Text,
                         Cloc = CalculateLinesOfCode(classDeclaration),
                         Celoc = CalculateEffectiveLinesOfCode(classDeclaration),
                         Nmd = CalculateNumberOfMethodsDeclared(classDeclaration),
@@ -101,31 +108,40 @@ public class ClassMetricCalculator : IMetricCalculator<ClassMetrics> {
     }
 
     private int CalculateAccessToForeignData(ClassDeclarationSyntax classDeclaration, SemanticModel semanticModel) {
-        var methods = classDeclaration.Members.OfType<MethodDeclarationSyntax>();
+        var atfd = 0;
+        var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration);
+        // Get all member access expressions in the class
+        var memberAccesses = classDeclaration.DescendantNodes().OfType<MemberAccessExpressionSyntax>();
 
-        var accessToForeignDataCount = 0;
+        foreach (var memberAccess in memberAccesses)
+        {
+            // Get the symbol of the accessed member
+            var memberSymbol = semanticModel.GetSymbolInfo(memberAccess).Symbol;
 
-        foreach (var method in methods) {
-            var memberAccesses = method.DescendantNodes().OfType<MemberAccessExpressionSyntax>();
+            if (memberSymbol is IPropertySymbol or IFieldSymbol)
+            {
+                // Get the containing type of the accessed member
+                var containingType = memberSymbol.ContainingType;
 
-            foreach (var memberAccess in memberAccesses) {
-                var symbolInfo = semanticModel.GetSymbolInfo(memberAccess);
-
-                if (symbolInfo.Symbol == null) {
-                    continue;
-                }
-
-                var containingType = symbolInfo.Symbol.ContainingType;
-                var currentClass = semanticModel.GetDeclaredSymbol(classDeclaration);
-
-                if (containingType != null && currentClass != null &&
-                    !SymbolEqualityComparer.Default.Equals(containingType, currentClass)) {
-                    accessToForeignDataCount++;
+                // If the containing type is different from the current class, count it as a foreign data access
+                if (!SymbolEqualityComparer.Default.Equals(containingType, classSymbol))
+                {
+                    // Ensure we are not counting constructor initializers
+                    if (!IsInObjectInitializer(memberAccess))
+                    {
+                        atfd++;
+                    }
                 }
             }
         }
 
-        return accessToForeignDataCount;
+        return atfd;
+    }
+    
+    static bool IsInObjectInitializer(MemberAccessExpressionSyntax memberAccess)
+    {
+        var initializer = memberAccess.Ancestors().OfType<InitializerExpressionSyntax>().FirstOrDefault();
+        return initializer != null;
     }
 
     private int CalculateNumberReturnStatements(ClassDeclarationSyntax classDeclaration) {
@@ -216,7 +232,7 @@ public class ClassMetricCalculator : IMetricCalculator<ClassMetrics> {
     }
 
     private int CalculateDepthOfInheritanceTree(ClassDeclarationSyntax classDeclaration, SemanticModel semanticModel) {
-        var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration) as INamedTypeSymbol;
+        var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration);
         if (classSymbol == null) {
             return 0;
         }
@@ -263,7 +279,8 @@ public class ClassMetricCalculator : IMetricCalculator<ClassMetrics> {
         return directClassCouplings.Count;
     }
 
-    private int CalculateAccessToForeignDataDirectly(ClassDeclarationSyntax classDeclaration,
+    private int CalculateAccessToForeignDataDirectly(
+        ClassDeclarationSyntax classDeclaration,
         SemanticModel semanticModel) {
         var accessToForeignData = 0;
 
@@ -293,7 +310,9 @@ public class ClassMetricCalculator : IMetricCalculator<ClassMetrics> {
         return accessToForeignData;
     }
 
-    private bool IsMemberOfCurrentClass(INamedTypeSymbol containingType, ClassDeclarationSyntax classDeclaration,
+    private bool IsMemberOfCurrentClass(
+        INamedTypeSymbol containingType, 
+        ClassDeclarationSyntax classDeclaration, 
         SemanticModel semanticModel) {
         var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration);
         return SymbolEqualityComparer.Default.Equals(containingType, classSymbol);

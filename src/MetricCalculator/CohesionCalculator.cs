@@ -4,7 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace MetricCalculator;
 
 public static class CohesionCalculator {
-    public static int CalculateLackOfCohesion(this ClassDeclarationSyntax classDeclaration, SemanticModel model) {
+    public static double CalculateLackOfCohesion(this ClassDeclarationSyntax classDeclaration, SemanticModel model) {
         var methods = classDeclaration.Members.OfType<MethodDeclarationSyntax>().ToList();
 
         var methodPairsWithCommonFields = 0;

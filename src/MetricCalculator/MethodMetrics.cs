@@ -1,11 +1,11 @@
 namespace MetricCalculator;
 
-public class MethodMetrics {
+public class MethodMetrics : IMetric {
     public string MethodName { get; set; }
     public int Cyclo { get; set; } // Cyclomatic Complexity
     public int CycloSwitch { get; set; } // Cyclomatic Complexity Without Cases
     public int Mloc { get; set; } // Method Lines of Code
-    public int Meloc { get; set; }  // Method Effective Lines of Code
+    public int Meloc { get; set; } // Method Effective Lines of Code
     public int Nop { get; set; } // Number of Parameters
     public int Nolv { get; set; } // Number of Local Variables
     public int Notc { get; set; } // Number of Try-Catch Blocks
@@ -23,8 +23,12 @@ public class MethodMetrics {
     public double Aid { get; set; } // Foreign data access
 
     public override string ToString() {
-        return $"Method: {MethodName}, CYCLO: {Cyclo}, CYCLO_SWITCH: {CycloSwitch}, MLOC: {Mloc}, MELOC: {Meloc}, " +
-               $"NOP: {Nop}, NOLV: {Nolv}, NOTC: {Notc}, MNOL: {Mnol}, MNOR: {Mnor}, MNOC: {Mnoc}, MNOA: {Mnoa}, " +
-               $"NONL: {Nonl}, NOSL: {Nosl}, NOMO: {Nomo}, NOPE: {Nope}, NOLE: {Nole}, MMNB: {Mmnb}, NOUW: {Nouw}, AID: {Aid}";
+        return $"{MethodName},{Cyclo},{CycloSwitch},{Mloc},{Meloc},{Nop},{Nolv},{Notc},{Mnol},{Mnor},{Mnoc},{Mnoa}," +
+               $"{Nonl},{Nosl},{Nomo},{Nope},{Nole},{Mmnb},{Nouw},{Aid}";
+    }
+
+    public string GetHeadline() {
+        return "MethodName,Cyclo,CycloSwitch,Mloc,Meloc,Nop,Nolv,Notc,Mnol,Mnor,Mnoc,Mnoa,Nonl,Nosl,Nomo,Nope,Nole," +
+               "Mmnb,Nouw,Aid";
     }
 }

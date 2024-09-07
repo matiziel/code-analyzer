@@ -7,7 +7,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace MetricCalculator;
 
 public class MethodMetricCalculator : IMetricCalculator<MethodMetrics> {
-    public async Task<IEnumerable<MethodMetrics>> Calculate(string solutionPath) {
+    public async Task<IEnumerable<MethodMetrics>> Calculate(string solutionPath, Dictionary<string, int> annotations = null) {
         var projects = await ProjectProvider.GetFromPath(solutionPath);
 
         var calculatedMetrics = new List<MethodMetrics>();
@@ -22,11 +22,19 @@ public class MethodMetricCalculator : IMetricCalculator<MethodMetrics> {
 
                 var model = await document.GetSemanticModelAsync();
 
+                var methods = root.DescendantNodes()
+                    .OfType<MethodDeclarationSyntax>();
+
+                if (annotations is not null) {
+                    methods = methods.Where(x =>
+                        annotations.Keys.Contains(model.GetDeclaredSymbol(x)?.ToDisplayString()));
+                }
+
                 var methodMetrics = root.DescendantNodes()
                     .OfType<MethodDeclarationSyntax>()
                     .Where(method => method.Parent is not InterfaceDeclarationSyntax)
                     .Select(method => new MethodMetrics {
-                        MethodName = method.Identifier.Text,
+                        MethodName = model.GetDeclaredSymbol(method)?.ToDisplayString() ?? method.Identifier.Text,
                         Cyclo = method.CalculateCyclomaticComplexity(),
                         CycloSwitch = method.CalculateCyclomaticComplexityWithoutCases(),
                         Mloc = CalculateMethodLinesOfCode(method),
