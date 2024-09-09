@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Common;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -33,90 +34,108 @@ public class RefusedBequestAnalyzer : DiagnosticAnalyzer {
         var classDeclaration = (ClassDeclarationSyntax)context.Node;
         var semanticModel = context.SemanticModel;
         
-        
-        // var systemAssemblies = context.GetSystemAssemblies();
-
         // Get the class symbol and its base type
         var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration);
         var baseType = classSymbol?.BaseType;
-        
-        if (classSymbol.Name != "DerivedClass")
-            return;
 
         // If the class does not have a base type or it's not a custom class, return
-        if (baseType is not { SpecialType: SpecialType.None }) {
+        if (baseType == null || baseType.SpecialType == SpecialType.System_Object)
             return;
-        }
-        
 
-        // Check if the class overrides any members from the base class
-        var overridesMember = false;
-        var notImplementedExceptionFound = false;
-        var y = classSymbol.GetMembers();
+        var methodDeclarations = classDeclaration.DescendantNodes()
+            .OfType<MethodDeclarationSyntax>()
+            .Where(m => m.Modifiers.Any(SyntaxKind.OverrideKeyword))
+            .ToList();
         
-        foreach (var member in classSymbol.GetMembers()) {
-            if (!member.IsOverride) {
+        // Sprawdzenie, czy klasa ma metody
+        if (!classDeclaration.Members.OfType<MethodDeclarationSyntax>().Any())
+        {
+            return; // Pomijamy klasy bez metod
+        }
+
+        var throwsNotImplementedException = false;
+        var usesBaseMembers = false;
+        
+        foreach (var method in methodDeclarations) {
+            if (!ThrowsNotImplementedException(method)) {
                 continue;
             }
-            
-            overridesMember = true;
-
-            // Check if the overridden method throws NotImplementedException
-            var methodSyntax =
-                member.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() as MethodDeclarationSyntax;
-
-            notImplementedExceptionFound = ThrowsNotImplementedException(methodSyntax);
-                
-            if (notImplementedExceptionFound) {
-                break;
-            }
-        }
-
-        // Check if the class uses any members from the base class
-        var usesBaseMembers = false;
-        var x = classDeclaration.DescendantNodes();
-        foreach (var descendant in classDeclaration.DescendantNodes()) {
-            if (UsesBaseMembers(semanticModel, descendant, baseType)) {
-                usesBaseMembers = true;
-                break;
-            }
-        }
-
-        // If the class neither overrides nor uses any base class members,
-        // or it throws NotImplementedException in overridden methods, report a diagnostic
-        if (overridesMember && usesBaseMembers && !notImplementedExceptionFound) {
-            return;
+            throwsNotImplementedException = true;
+            break;
         }
         
+        var descendantNodes = classDeclaration.DescendantNodes();
+        var containingType = context.ContainingSymbol.ContainingType;
+        
+        foreach (var node in descendantNodes)
+        {
+            if (node is IdentifierNameSyntax identifierName)
+            {
+                var symbol = semanticModel.GetSymbolInfo(identifierName).Symbol;
+
+                if (symbol != null && SymbolBelongsToBaseClass(symbol, baseType))
+                {
+                    usesBaseMembers = true;
+                    break;
+                }
+            }
+            if (node is InvocationExpressionSyntax invocation)
+            {
+                var methodContainingType = GetMethodContainingType(semanticModel, invocation);
+                
+                if (!SymbolEqualityComparer.Default.Equals(methodContainingType, containingType)) {
+                    usesBaseMembers = true;
+                    break;
+                }
+            }
+            // Sprawdzenie, czy klasa pochodna nadpisuje metody klasy bazowej
+            if (node is MethodDeclarationSyntax methodDeclaration && methodDeclaration.Modifiers.Any(SyntaxKind.OverrideKeyword))
+            {
+                var methodSymbol = semanticModel.GetDeclaredSymbol(methodDeclaration);
+
+                if (methodSymbol?.OverriddenMethod != null && SymbolEqualityComparer.Default.Equals(methodSymbol.OverriddenMethod.ContainingType, baseType))
+                {
+                    usesBaseMembers = true;
+                    break;
+                }
+            }
+        }
+
+        if (!throwsNotImplementedException && usesBaseMembers) {
+            return;
+        }
+
         var diagnostic = Diagnostic.Create(Rule, classDeclaration.Identifier.GetLocation(),
             classSymbol.Name, baseType.Name);
         context.ReportDiagnostic(diagnostic);
     }
 
-    private static bool ThrowsNotImplementedException(MethodDeclarationSyntax methodSyntax) {
-        if (methodSyntax is null) {
-            return false;
-        }
+    private static bool ThrowsNotImplementedException(MethodDeclarationSyntax method)
+    {
+        var throwStatements = method.DescendantNodes().OfType<ThrowStatementSyntax>();
 
-        foreach (var statement in methodSyntax.Body?.Statements ?? Enumerable.Empty<StatementSyntax>()) {
-            if (statement is not ThrowStatementSyntax throwStatement) continue;
-            
-            var throwExpression = throwStatement.Expression as ObjectCreationExpressionSyntax;
-
-            if (throwExpression?.Type.ToString() == "NotImplementedException") {
+        foreach (var throwStatement in throwStatements)
+        {
+            if (throwStatement.Expression is ObjectCreationExpressionSyntax creationExpression &&
+                creationExpression.Type.ToString() == "NotImplementedException")
+            {
                 return true;
             }
         }
 
         return false;
     }
+    
+    private static bool SymbolBelongsToBaseClass(ISymbol symbol, INamedTypeSymbol baseClassSymbol)
+    {
+        return symbol.ContainingType != null && symbol.ContainingType.Equals(baseClassSymbol);
+    }
+    
+    private static INamedTypeSymbol GetMethodContainingType(
+        SemanticModel semanticModel, InvocationExpressionSyntax invocation) {
+        var symbolInfo = semanticModel.GetSymbolInfo(invocation.Expression);
+        var methodSymbol = symbolInfo.Symbol as IMethodSymbol;
 
-    private static bool UsesBaseMembers(
-        SemanticModel semanticModel, SyntaxNode descendant, INamedTypeSymbol baseType) {
-        if (descendant is not MemberAccessExpressionSyntax or IdentifierNameSyntax) {
-            return false;
-        }
-        var symbolInfo = semanticModel.GetSymbolInfo(descendant);
-        return symbolInfo.Symbol?.ContainingType is not null && SymbolEqualityComparer.Default.Equals(symbolInfo.Symbol.ContainingType, baseType);
+        return methodSymbol?.ContainingType;
     }
 }

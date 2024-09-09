@@ -7,6 +7,7 @@ public class ProjectProvider {
 
     public static async Task<IEnumerable<Project>> GetFromPath(string path) {
         try {
+            Console.WriteLine("Preparing: " + path);
             if (!File.Exists(path) && !Directory.Exists(path)) {
                 Console.WriteLine("Invalid path.");
                 return Enumerable.Empty<Project>();
@@ -16,11 +17,13 @@ public class ProjectProvider {
 
             if (path.EndsWith(".sln")) {
                 var solution = await workspace.OpenSolutionAsync(path);
+                Console.WriteLine($"\"{path}\",");
                 return solution.Projects;
             }
 
             if (path.EndsWith(".csproj")) {
                 var project = await workspace.OpenProjectAsync(path);
+                Console.WriteLine($"\"{path}\",");
                 return new List<Project>() { project };
             }
             
